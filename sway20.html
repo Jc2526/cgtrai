@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Human Tracking with Audio</title>
+    <style>
+        /* Base styles */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-image: url('home4.png'); /* Background image */
+            background-size: cover;
+            background-repeat: no-repeat;
+            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        /* Video container styles */
+        #videoContainer {
+            position: relative;
+            width: 100%;
+            max-width: 100%;
+            background-color: rgba(0, 0, 0, 0.5); /* Transparent background */
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        #videoCanvas, #overlayCanvas {
+            width: 100%;
+            height: auto;
+        }
+
+        /* Movable box styles */
+        #box {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 10%;
+            height: 50%;
+            border: 2px solid #fff;
+            cursor: pointer;
+            border-radius: 10px;
+            z-index: 1;
+            transition: border-color 0.3s ease;
+        }
+
+        #box:hover {
+            border-color: #ff6347;
+        }
+
+        /* Motion text styles */
+        #motionText {
+            position: absolute;
+            top: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 16px;
+            color: #fff;
+            font-weight: bold;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        /* Audio control button */
+        #audioControl {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 18px;
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: background-color 0.3s ease;
+        }
+
+        #audioControl:hover {
+            background-color: #45a049;
+        }
+
+        /* Bottom bar styles */
+        #bottomBar {
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #bottomBar button {
+            background-color: #333;
+            border: none;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+            padding: 15px 25px;
+            margin: 0 10px;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: background-color 0.3s ease;
+        }
+
+        #bottomBar button:hover {
+            background-color: #555;
+        }
+    </style>
+</head>
+<body>
+    <div id="videoContainer">
+        <video id="videoCanvas" autoplay playsinline></video>
+        <canvas id="overlayCanvas"></canvas>
+    </div>
+    <div id="box"></div>
+    <div id="motionText">No Motion Detected</div>
+    <button id="audioControl">Toggle Sound</button>
+
+    <div id="bottomBar">
+        <button onclick="goToHome()">Home</button>
+        <button onclick="goHelp()">Help</button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    <script>
+        let soundOn = false;
+        const beep = new Audio('beep.mp3');
+        beep.loop = true;
+        beep.volume = 0.5;
+
+        // Initialize the application
+        async function run() {
+            const video = document.getElementById('videoCanvas');
+            const overlayCanvas = document.getElementById('overlayCanvas');
+            const ctx = overlayCanvas.getContext('2d');
+            const box = document.getElementById('box');
+            const motionText = document.getElementById('motionText');
+            const audioControl = document.getElementById('audioControl');
+
+            // Load model
+            const model = await cocoSsd.load();
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    video.srcObject = stream;
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        detectAndDraw(model, video, ctx, box, motionText);
+                    };
+                })
+                .catch(error => {
+                    console.error('Error accessing the camera:', error);
+                });
+
+            // Toggle sound
+            audioControl.addEventListener('click', () => {
+                soundOn = !soundOn;
+                if (soundOn) {
+                    beep.play();
+                    audioControl.textContent = 'Sound: On';
+                } else {
+                    beep.pause();
+                    audioControl.textContent = 'Sound: Off';
+                }
+            });
+
+            // Drag box functionality
+            initBoxDragging(box);
+        }
+
+        // Enable box dragging
+        function initBoxDragging(box) {
+            let isDragging = false;
+            let offsetX, offsetY;
+
+            box.addEventListener('mousedown', startDrag);
+            box.addEventListener('touchstart', startDrag);
+
+            function startDrag(e) {
+                if (e.type === 'mousedown' && e.buttons === 1 || e.type === 'touchstart') {
+                    e.preventDefault();
+                    isDragging = true;
+                    const rect = box.getBoundingClientRect();
+                    const parentRect = box.parentElement.getBoundingClientRect();
+                    offsetX = (e.clientX || e.touches[0].clientX) - rect.left + parentRect.left;
+                    offsetY = (e.clientY || e.touches[0].clientY) - rect.top + parentRect.top;
+                    window.addEventListener('mousemove', drag);
+                    window.addEventListener('touchmove', drag);
+                    window.addEventListener('mouseup', stopDrag);
+                    window.addEventListener('touchend', stopDrag);
+                }
+            }
+
+            function drag(e) {
+                if (isDragging) {
+                    const x = e.clientX || e.touches[0].clientX;
+                    const y = e.clientY || e.touches[0].clientY;
+                    box.style.left = `${x - offsetX}px`;
+                    box.style.top = `${y - offsetY}px`;
+                }
+            }
+
+            function stopDrag() {
+                isDragging = false;
+                window.removeEventListener('mousemove', drag);
+                window.removeEventListener('touchmove', drag);
+                window.removeEventListener('mouseup', stopDrag);
+                window.removeEventListener('touchend', stopDrag);
+            }
+        }
+
+        // Detect and draw bounding boxes
+        async function detectAndDraw(model, video, ctx, box, motionText) {
+            const predictions = await model.detect(video);
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+            let motionDetected = false;
+
+            predictions.forEach(prediction => {
+                if (prediction.class === 'person') {
+                    const [x, y, width, height] = prediction.bbox;
+                    ctx.strokeStyle = 'red';
+                    ctx.lineWidth = 4;
+                    ctx.strokeRect(x, y, width, height);
+
+                    const boxRect = box.getBoundingClientRect();
+                    const intersects = isIntersect(boxRect, { left: x, top: y, right: x + width, bottom: y + height });
+                    if (intersects) motionDetected = true;
+                }
+            });
+
+            motionText.style.opacity = motionDetected ? '1' : '0';
+            beep[motionDetected ? 'pause' : 'play']();
+
+            requestAnimationFrame(() => detectAndDraw(model, video, ctx, box, motionText));
+        }
+
+        // Check intersection
+        function isIntersect(rect1, rect2) {
+            return !(rect1.right < rect2.left || rect1.left > rect2.right || rect1.bottom < rect2.top || rect1.top > rect2.bottom);
+        }
+
+        // Navigation functions
+        function goToHome() {
+            window.location.href = "index.html";
+        }
+
+        function goHelp() {
+            window.location.href = "help.html";
+        }
+
+        run();
+    </script>
+</body>
+</html>

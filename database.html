@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database Access</title>
+</head>
+<body>
+    <h1>Database Access</h1>
+
+    <div id="registeredUsers"></div>
+
+    <script>
+        function displayRegisteredUsers() {
+            const userData = JSON.parse(localStorage.getItem('userData'));
+            const registeredUsersDiv = document.getElementById('registeredUsers');
+
+            registeredUsersDiv.innerHTML = '<h2>List of Registered Users</h2>';
+
+            if (userData) {
+                const userList = document.createElement('ul');
+                for (const username in userData) {
+                    const listItem = document.createElement('li');
+                    const registrationDate = new Date(userData[username].registrationDate);
+                    const currentDate = new Date();
+                    const daysRemaining = 30 - Math.floor((currentDate - registrationDate) / (1000 * 60 * 60 * 24));
+
+                    listItem.textContent = `${username}: ${userData[username]} (Days remaining: ${daysRemaining})`;
+                    const deleteButton = document.createElement('button');
+                    deleteButton.textContent = 'Delete';
+                    deleteButton.onclick = function() {
+                        deleteRegisteredUser(username);
+                    };
+                    listItem.appendChild(deleteButton);
+                    userList.appendChild(listItem);
+
+                    // Check if registration date is older than 30 days
+                    if (daysRemaining <= 0) {
+                        delete userData[username];
+                        localStorage.setItem('userData', JSON.stringify(userData));
+                    }
+                }
+                registeredUsersDiv.appendChild(userList);
+            } else {
+                registeredUsersDiv.innerHTML += '<p>No registered users yet.</p>';
+            }
+        }
+
+        function deleteRegisteredUser(username) {
+            if (confirm(`Are you sure you want to delete ${username}?`)) {
+                let userData = JSON.parse(localStorage.getItem('userData'));
+                delete userData[username];
+                localStorage.setItem('userData', JSON.stringify(userData));
+                displayRegisteredUsers(); // Refresh the list after deletion
+                alert(`${username} has been deleted.`);
+            }
+        }
+
+        // Call the function to display registered users on page load
+        displayRegisteredUsers();
+    </script>
+</body>
+</html>

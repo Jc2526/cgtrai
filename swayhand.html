@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hand Tracking with Audio</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f0f0f0;
+            overflow-x: hidden; /* This will hide horizontal scrollbar */
+            padding-bottom: 60px; /* Adjust as needed based on the height of your bottom bar */
+        }
+
+        #videoContainer {
+            position: relative;
+            width: 100%;
+            background-color: #000;
+        }
+
+        #videoCanvas {
+            width: 100%;
+            height: auto;
+        }
+
+        #overlayCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: auto;
+        }
+
+        #box {
+            position: absolute;
+            top: 30%;
+            left: 30%;
+            width: 40%;
+            height: 40%;
+            border: 2px solid #fff;
+            cursor: pointer;
+            touch-action: none; /* Disable browser's default touch action */
+        }
+
+        #motionText {
+            position: absolute;
+            bottom: 50px;
+            left: 10px;
+            font-size: 18px;
+            color: #333;
+            font-weight: bold;
+        }
+
+        #audioControl {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 18px;
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: background-color 0.3s ease;
+        }
+
+        #audioControl:hover {
+            background-color: #45a049;
+        }
+
+        #bottomBar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 10%;
+            background-color: #333;
+            padding: 10px 0; /* Adjust padding as needed */
+            text-align: center;
+        }
+
+        #bottomBar button {
+            background-color: transparent;
+            border: none;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+            padding: 20px 20px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        #bottomBar button:hover {
+            background-color: #555;
+        }
+    </style>
+</head>
+<body>
+    <div id="videoContainer">
+        <video id="videoCanvas" autoplay playsinline aspectRatio="16:9"></video>
+        <canvas id="overlayCanvas"></canvas>
+    </div>
+    <div id="box"></div>
+    <div id="motionText">Motion</div>
+    <button id="audioControl">Toggle Sound</button>
+
+    <div id="bottomBar">
+        <!-- Your navigation buttons can go here -->
+        <button onclick="goToHome()">Home</button>
+        <button  onclick="goHelp()">  Help</button>
+
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose"></script>
+    <script>
+        let soundOn = false;
+        let beep = new Audio('beep.mp3');
+        beep.loop = true; // Play audio continuously
+        beep.volume = 0.5; // Initial volume (adjust as needed)
+        let motionDetected = false;
+        let prevHandPositions = [];
+        let lastDetectionTime = Date.now();
+        const clearThreshold = 500; // 0.5 second
+
+        async function run() {
+            const video = document.getElementById('videoCanvas');
+            const overlayCanvas = document.getElementById('overlayCanvas');
+            const ctx = overlayCanvas.getContext('2d');
+            const box = document.getElementById('box');
+            const motionText = document.getElementById('motionText');
+            const audioControl = document.getElementById('audioControl');
+
+            const model = await handpose.load({ scoreThreshold: 0.1 }); // Adjust score threshold as needed
+
+            // Request higher frame rate if supported
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { frameRate: { ideal: 30, max: 60 } } });
+            video.srcObject = stream;
+
+            video.onloadedmetadata = () => {
+                video.play();
+                const aspectRatio = video.videoWidth / video.videoHeight;
+                overlayCanvas.width = video.clientWidth;
+                overlayCanvas.height = video.clientWidth / aspectRatio;
+                detectAndDraw(model, video, ctx, box, motionText);
+            };
+
+            // Make the box resizable
+            let startX, startY, startWidth, startHeight;
+            box.addEventListener('mousedown', startResize);
+            box.addEventListener('touchstart', startResize);
+
+            function startResize(e) {
+                e.preventDefault();
+                window.addEventListener('mousemove', resize);
+                window.addEventListener('touchmove', resize);
+                window.addEventListener('mouseup', stopResize);
+                window.addEventListener('touchend', stopResize);
+                if (e.type === 'mousedown') {
+                    startX = e.clientX;
+                    startY = e.clientY;
+                } else {
+                    startX = e.touches[0].clientX;
+                    startY = e.touches[0].clientY;
+                }
+                startWidth = parseInt(document.defaultView.getComputedStyle(box).width);
+                startHeight = parseInt(document.defaultView.getComputedStyle(box).height);
+            }
+
+            function resize(e) {
+                if (e.type === 'mousemove') {
+                    const width = startWidth + e.clientX - startX;
+                    const height = startHeight + e.clientY - startY;
+                    box.style.width = `${width}px`;
+                    box.style.height = `${height}px`;
+                } else {
+                    const width = startWidth + e.touches[0].clientX - startX;
+                    const height = startHeight + e.touches[0].clientY - startY;
+                    box.style.width = `${width}px`;
+                    box.style.height = `${height}px`;
+                }
+            }
+
+            function stopResize() {
+                window.removeEventListener('mousemove', resize);
+                window.removeEventListener('touchmove', resize);
+            }
+
+            // Function to toggle sound
+            audioControl.addEventListener('click', () => {
+                soundOn = !soundOn;
+                if (soundOn) {
+                    beep.volume = 1;
+                    beep.play(); // Play sound when the button is clicked
+                    audioControl.textContent = 'Sound: On';
+                } else {
+                    beep.pause();
+                }
+            });
+        }
+
+        async function detectAndDraw(model, video, ctx, box, motionText) {
+            const predictions = await model.estimateHands(video);
+
+            // Get the scale factors for width and height
+            const widthScale = video.clientWidth / video.videoWidth;
+            const heightScale = video.clientHeight / video.videoHeight;
+
+            const currentTime = Date.now();
+            const detectionDuration = currentTime - lastDetectionTime;
+
+            // Clear the canvas if no hand is detected for a certain duration
+            if (predictions.length === 0 && detectionDuration > clearThreshold) {
+                ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+            }
+
+            // Reset motion detection
+            motionDetected = false;
+
+            // Draw a red dot on each detected hand
+            if (predictions.length > 0) {
+                lastDetectionTime = currentTime; // Update last detection time
+                predictions.forEach(prediction => {
+                    const landmarks = prediction.landmarks;
+                    landmarks.forEach(landmark => {
+                        const x = landmark[0];
+                        const y = landmark[1];
+
+                        // Scale the coordinates to match the canvas size
+                        const scaledX = x * widthScale;
+                        const scaledY = y * heightScale;
+
+                        // Draw red dot
+                        ctx.beginPath();
+                        ctx.fillStyle = 'red';
+                        ctx.arc(scaledX, scaledY, 5, 0, 2 * Math.PI);
+                        ctx.fill();
+
+                        // Check if the hand's position is within the box
+                        const boxRect = box.getBoundingClientRect();
+                        if (scaledX >= boxRect.left && scaledX <= boxRect.right &&
+                            scaledY >= boxRect.top && scaledY <= boxRect.bottom) {
+                            motionDetected = true;
+                        }
+                    });
+                });
+            }
+
+            // Update motion text based on detection
+            motionText.textContent = motionDetected ? 'Motion Detected' : 'No Motion';
+
+            // Adjust volume based on motion detection
+            if (soundOn && motionDetected) {
+                beep.pause();
+            } else {
+                beep.volume = 1;
+                beep.play();
+            }
+
+            // Repeat the process
+            requestAnimationFrame(() => detectAndDraw(model, video, ctx, box, motionText));
+        }
+
+        // Function to handle home button click
+        function goToHome() {
+            // Redirect to the home page or perform any other desired action
+            window.location.href = "index.html";
+        }
+        function goHelp() {
+            // Redirect to the home page or perform any other desired action
+            window.location.href = "Help.html";
+        }
+
+        // Start the application
+        run();
+    </script>
+</body>
+</html>

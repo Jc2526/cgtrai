@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <title>Login</title>
+</head>
+<body>
+   <h1>Login or Register</h1>
+
+   <form id="loginForm" onsubmit="login(event)">
+       <div>
+           <label for="username">Username:</label>
+           <input type="text" id="username" required>
+       </div>
+       <div>
+           <label for="password">Password:</label>
+           <input type="password" id="password" required>
+       </div>
+       <button type="submit">Login</button>
+   </form>
+
+   <form id="registerForm" style="display: none;" onsubmit="register(event)">
+       <div>
+           <label for="newUsername">New Username:</label>
+           <input type="text" id="newUsername" required>
+       </div>
+       <div>
+           <label for="newPassword">New Password:</label>
+           <input type="password" id="newPassword" required>
+       </div>
+       <button type="submit">Register</button>
+   </form>
+
+   <button onclick="toggleForms()">Register</button>
+
+
+   <script>
+       function login(event) {
+           event.preventDefault(); // Prevent form submission
+
+           const username = document.getElementById('username').value;
+           const password = document.getElementById('password').value;
+
+           const userData = JSON.parse(localStorage.getItem('userData'));
+           if (userData && userData[username] === password) {
+               alert('Login successful!');
+                window.location.href = 'login12.html';
+
+               // Redirect or proceed to database page
+           }
+
+           else {
+               alert('Invalid username or password');
+           }
+       }
+
+       function register(event) {
+           event.preventDefault(); // Prevent form submission
+
+           const newUsername = document.getElementById('newUsername').value;
+           const newPassword = document.getElementById('newPassword').value;
+
+           let userData = JSON.parse(localStorage.getItem('userData')) || {};
+           if (!userData[newUsername]) {
+               userData[newUsername] = newPassword;
+               localStorage.setItem('userData', JSON.stringify(userData));
+               alert('Registration successful!');
+               // Redirect or proceed to database page
+           } else {
+               alert('Username already exists');
+           }
+       }
+
+       function toggleForms() {
+           const loginForm = document.getElementById('loginForm');
+           const registerForm = document.getElementById('registerForm');
+
+           if (loginForm.style.display === 'none') {
+               loginForm.style.display = 'block';
+               registerForm.style.display = 'none';
+           } else {
+               loginForm.style.display = 'none';
+               regist\erForm.style.display = 'block';
+           }
+       }
+
+       function viewRegisteredUsers() {
+           const userData = JSON.parse(localStorage.getItem('userData'));
+           const registeredUsers = document.getElementById('registeredUsers');
+
+           registeredUsers.innerHTML = '<h2>Registered Users</h2>';
+
+           if (userData) {
+               const userList = document.createElement('ul');
+               for (const username in userData) {
+                   const listItem = document.createElement('li');
+                   listItem.textContent = `${username}: ${userData[username]}`;
+                   userList.appendChild(listItem);
+               }
+               registeredUsers.appendChild(userList);
+           } else {
+               registeredUsers.innerHTML += '<p>No registered users yet.</p>';
+           }
+       }
+   </script>
+
+
+</body>
+</html>
